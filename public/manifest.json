@@ -1,25 +1,57 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
-  "icons": [
+  "manifest_version": 3,
+  "name": "YouTube Farsi Subtitle",
+  "version": "1.0.0",
+  "description": "Capture YouTube audio, send to Whisper, and show subtitles.",
+  "permissions": [
+    "cookies",
+    "tabs",
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background/index.js",
+    "type": "module"
+  },
+  "content_scripts": [
     {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "logo192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "logo512.png",
-      "type": "image/png",
-      "sizes": "512x512"
+      "matches": ["*://www.youtube.com/*"],
+      "js": [
+        "content/addCaptionButton.js",
+        "content/captions.js",
+        "content/index.js"  
+      ],
+      "css": ["content/captions.css"],
+      "run_at": "document_start"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "action": {
+    "default_popup": "popup/index.html",  
+    "default_title": "YouTube Farsi Subtitle"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "audio-capture.js",
+        "content/*.js",
+        "content/*.css",
+        "icons/*.svg",
+        "icons/*.png"
+      ],
+      "matches": ["*://www.youtube.com/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'unsafe-inline'; object-src 'self'; sandbox allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }
