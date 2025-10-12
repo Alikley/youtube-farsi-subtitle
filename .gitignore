@@ -21,3 +21,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ignore large model and whisper source
+/server/models/ggml-base.bin
+**/whisper.cpp

@@ -1,5 +1,6 @@
 import { captureYouTubeAudio } from "./audioCapture";
-
+// export {};
+// declare const chrome: any;
 console.log("🎬 YouTube STT content script loaded");
 
 // 🔹 ارسال کوکی‌ها به سرور
@@ -28,7 +29,7 @@ uploadCookiesToServer();
 
 // 🎧 شروع ضبط صدا
 function tryStartCapture() {
-  const video = document.querySelector("video") as HTMLVideoElement | null;
+  const video = document.querySelector("video");
   if (video) {
     captureYouTubeAudio();
   } else {
@@ -39,5 +40,3 @@ function tryStartCapture() {
 
 window.addEventListener("load", tryStartCapture);
 tryStartCapture();
-
-

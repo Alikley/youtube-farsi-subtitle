@@ -1,7 +1,8 @@
-import { Logger } from "../utils/logger";
-import { float32ToInt16 } from "../utils/audioUtils";
-import { MessageType } from "../types";
-
+import { Logger } from "../../src/utils/logger";
+import { float32ToInt16 } from "../../src/utils/audioUtils";
+import { MessageType } from "../../src/types";
+export {};
+declare const chrome: any;
 const log = new Logger("AudioCapture");
 
 let started = false;
@@ -129,7 +130,7 @@ export async function captureYouTubeAudio() {
     await audioCtx.resume();
     sampleRateGlobal = audioCtx.sampleRate;
 
-    const stream = (video as HTMLVideoElement).captureStream() as MediaStream;
+    const stream = (video as any).captureStream() as MediaStream;
     const clonedStream = stream.clone();
     const source = audioCtx.createMediaStreamSource(clonedStream);
 
