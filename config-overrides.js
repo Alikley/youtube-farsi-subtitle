@@ -1,7 +1,11 @@
-const CopyWebpackPlugin = require("copy-webpack-plugin");
-const path = require("path");
+import CopyWebpackPlugin from "copy-webpack-plugin";
+import path from "path";
+import { fileURLToPath } from "url";
 
-module.exports = function override(config, env) {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default function override(config, env) {
   config.output.publicPath = "./";
 
   if (env === "production") {
@@ -18,4 +22,4 @@ module.exports = function override(config, env) {
   }
 
   return config;
-};
+}

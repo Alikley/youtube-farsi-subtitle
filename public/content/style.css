@@ -1,0 +1,18 @@
+#fa-sub-box {
+  position: absolute !important;
+  bottom: 10% !important;
+  width: 100%;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 8px #000, 0 0 4px #000;
+  z-index: 999999;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 4px 10px;
+  border-radius: 8px;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}

@@ -1,6 +1,7 @@
 {
   "name": "youtube-farsi-subtitle",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

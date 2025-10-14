@@ -17,7 +17,7 @@ const COOKIE_FILE = path.join(
   "youtube.com_cookies.txt"
 );
 
-// ✅ تبدیل و ترجمه کامل ویدیو
+// ✅ مسیر اصلی برای دانلود و ترجمه با زمان‌بندی
 app.post("/preload", async (req, res) => {
   try {
     const { url } = req.body;
@@ -27,14 +27,34 @@ app.post("/preload", async (req, res) => {
     const audioPath = await downloadYouTubeAudio(url);
 
     console.log("🧠 Transcribing with Whisper...");
-    const english = await runWhisper(audioPath);
+    const { segments, fullText } = await runWhisper(audioPath);
 
-    console.log("🌍 Translating to Persian...");
-    const persian = await translateToPersian(english);
+    if (!segments?.length) {
+      throw new Error("No segments found from Whisper output");
+    }
 
-    res.json({ success: true, english, persian });
+    console.log(`🌍 Translating ${segments.length} segments...`);
+    const translatedSegments = [];
+
+    // ترجمه‌ی هر segment جداگانه با حفظ زمان
+    for (const s of segments) {
+      const persianText = await translateToPersian(s.text);
+      translatedSegments.push({
+        start: s.start,
+        end: s.end,
+        text: persianText,
+      });
+    }
+
+    console.log("✅ All segments translated!");
+
+    res.json({
+      success: true,
+      englishSegments: segments,
+      captions: translatedSegments, // زیرنویس فارسی با زمان‌بندی
+    });
   } catch (err) {
-    console.error("❌ Failed:", err);
+    console.error("❌ /preload failed:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -53,33 +73,7 @@ app.post("/upload-cookies", (req, res) => {
   }
 });
 
-app.post("/api/translateVideo", async (req, res) => {
-  try {
-    const { url } = req.body;
-    if (!url) return res.status(400).json({ error: "No YouTube URL provided" });
-
-    console.log("🎬 Starting translation pipeline for:", url);
-
-    // ۱. دانلود صدا
-    const audioPath = await downloadYouTubeAudio(url);
-
-    // ۲. اجرای Whisper برای استخراج segments
-    const { segments } = await runWhisper(audioPath);
-
-    // ۳. ترجمه هر segment به فارسی
-    const persianSegments = await translateSegments(segments);
-
-    // ۴. برگرداندن caption نهایی
-    res.json({
-      success: true,
-      captions: persianSegments,
-    });
-  } catch (err) {
-    console.error("❌ Translation pipeline failed:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-// 📡 مسیر healthcheck برای ریلیز و تست سریع
+// مسیر سلامت برای تست سریع
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server running and ready ✅" });
 });

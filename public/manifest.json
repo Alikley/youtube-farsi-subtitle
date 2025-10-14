@@ -24,11 +24,11 @@
       "matches": ["*://www.youtube.com/*"],
       "js": [
         "content/addCaptionButton.js",
-        "content/captions.js",
+        "content/caption.js",
         "content/index.js"
       ],
-      "css": ["content/caption.css"],
-      "run_at": "document_start"
+      "css": ["content/style.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
@@ -40,7 +40,7 @@
       "resources": [
         "content/*.js",
         "content/*.css",
-        "icons/*.png",
+        "icons/*",
         "static/*"
       ],
       "matches": ["*://www.youtube.com/*"]
