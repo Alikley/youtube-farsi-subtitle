@@ -24,4 +24,5 @@ yarn-error.log*
 
 # ignore large model and whisper source
 /server/models/ggml-base.bin
+server\yt-dlp.exe
 **/whisper.cpp
