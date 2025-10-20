@@ -74,6 +74,19 @@ async function fetchCaptionsOnceForVideo(
 ) {
   // perform /preload once and set global cache
   try {
+    window.dispatchEvent(
+      new CustomEvent("farsi-show-timed", {
+        detail: {
+          captions: [
+            {
+              start: 0,
+              end: 9999,
+              text: "لطفاً بین ۱ تا ۲ دقیقه صبر کنید، زیرنویس در حال آماده‌سازی است...",
+            },
+          ],
+        },
+      })
+    );
     btn.innerHTML = svgActive;
     const resp = await fetch("http://localhost:3000/preload", {
       method: "POST",

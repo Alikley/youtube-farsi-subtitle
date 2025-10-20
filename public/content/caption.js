@@ -1,26 +1,30 @@
-// 🎬 Persian Caption Renderer (Synced with YouTube Video)
+// 🎬 Persian Caption Renderer (Improved)
 // Injected by addCaptionButton.js
 
 let captionsData = [];
 let currentSubtitle = null;
 let subBox = null;
 let checkInterval = null;
+let loadingMode = false;
 
 /**
  * نمایش یا به‌روزرسانی زیرنویس روی ویدیو
  */
-function showSubtitle(text) {
-  if (!subBox) return;
+function showSubtitle(text, persistent = false) {
+  ensureSubtitleBox();
   subBox.textContent = text;
   subBox.style.display = "block";
   subBox.style.opacity = "1";
+  if (persistent) {
+    loadingMode = true;
+  }
 }
 
 /**
  * پنهان کردن زیرنویس
  */
 function hideSubtitle() {
-  if (!subBox) return;
+  if (!subBox || loadingMode) return; // اگر حالت آماده‌سازی است، مخفی نکن
   subBox.style.opacity = "0";
   setTimeout(() => {
     if (subBox && subBox.style.opacity === "0") subBox.style.display = "none";
@@ -37,21 +41,23 @@ function ensureSubtitleBox() {
   subBox.id = "fa-sub-box";
   Object.assign(subBox.style, {
     position: "absolute",
-    bottom: "10%",
+    bottom: "8%",
     width: "100%",
     textAlign: "center",
-    fontSize: "22px",
+    fontSize: "20px",
     fontWeight: "600",
     color: "#fff",
-    textShadow: "0 0 8px #000, 0 0 4px #000",
+    textShadow: "0 0 6px #000, 0 0 2px #000",
     zIndex: "999999999",
-    background: "rgba(0,0,0,0.25)",
-    padding: "4px 10px",
-    borderRadius: "8px",
+    background: "rgba(0,0,0,0.35)",
+    padding: "6px 12px",
+    borderRadius: "10px",
     display: "none",
     opacity: "0",
-    transition: "opacity 0.2s ease-in-out",
+    transition: "opacity 0.25s ease-in-out",
     pointerEvents: "none",
+    fontFamily: "Vazir, sans-serif",
+    direction: "rtl",
   });
 
   const container =
@@ -65,15 +71,25 @@ function ensureSubtitleBox() {
 }
 
 /**
- * شروع نمایش زمان‌بندی شده‌ی زیرنویس‌ها
+ * شروع نمایش زمان‌بندی‌شده‌ی زیرنویس‌ها
  */
 function startCaptions(subs) {
+  if (
+    subs?.length === 1 &&
+    subs[0].text.includes("زیرنویس در حال آماده‌سازی است")
+  ) {
+    // حالت آماده‌سازی: متن ثابت تا پایان فرایند باقی می‌ماند
+    showSubtitle(subs[0].text, true);
+    return;
+  }
+
   captionsData = subs;
   if (!Array.isArray(captionsData) || captionsData.length === 0) {
     console.error("❌ No subtitles to display.");
     return;
   }
 
+  loadingMode = false;
   ensureSubtitleBox();
   const video = document.querySelector("video");
 
@@ -98,8 +114,6 @@ function startCaptions(subs) {
   }, 200);
 
   console.log(`🎯 Captions started (${captionsData.length} segments).`);
-
-  // ذخیره‌ی آخرین زیرنویس برای ادامه هنگام Play دوباره
   window.__farsiCachedCaptions = captionsData;
 }
 
@@ -108,7 +122,7 @@ function startCaptions(subs) {
  */
 function stopCaptions() {
   if (checkInterval) clearInterval(checkInterval);
-  hideSubtitle();
+  if (!loadingMode) hideSubtitle();
   currentSubtitle = null;
   console.log("🛑 Captions stopped.");
 }
@@ -121,13 +135,16 @@ function setupVideoListeners() {
   if (!video) return;
 
   video.addEventListener("pause", () => {
-    console.log("⏸ Video paused — hiding captions");
-    hideSubtitle();
+    if (!loadingMode) {
+      console.log("⏸ Video paused — hiding captions");
+      hideSubtitle();
+    }
   });
 
   video.addEventListener("play", () => {
     console.log("▶️ Video playing — resuming captions");
     if (
+      !loadingMode &&
       window.__farsiCachedCaptions &&
       window.__farsiCachedCaptions.length > 0
     ) {
@@ -172,6 +189,7 @@ window.addEventListener("message", (ev) => {
 
 window.addEventListener("farsi-toggle-hide", () => {
   console.log("🚫 Received toggle-hide event — hiding subtitles");
+  loadingMode = false;
   stopCaptions();
 });
 
