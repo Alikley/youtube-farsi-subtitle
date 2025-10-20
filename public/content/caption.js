@@ -170,5 +170,10 @@ window.addEventListener("message", (ev) => {
   }
 });
 
+window.addEventListener("farsi-toggle-hide", () => {
+  console.log("🚫 Received toggle-hide event — hiding subtitles");
+  stopCaptions();
+});
+
 setupVideoListeners();
 console.log("📜 caption.js loaded and listening for subtitles...");

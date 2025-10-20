@@ -5,7 +5,7 @@ dotenv.config();
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey:
-    "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",
+    "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",
 });
 
 /**
