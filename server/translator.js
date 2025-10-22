@@ -1,11 +1,18 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+
+import { fileURLToPath } from "url";
+
+// مسیر درست برای لود فایل .env
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey:
-    "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",
+  baseURL: "https://api.chatanywhere.org",
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
