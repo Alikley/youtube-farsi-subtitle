@@ -1,9 +1,9 @@
 #fa-sub-box {
   position: absolute !important;
-  bottom: 8% !important;
+  bottom: 80px !important; /* 🆙 بالاتر از اسلایدر تایمر */
   width: 100%;
   text-align: center;
-  font-size: 20px;
+  font-size: clamp(18px, 2.2vw, 28px); /* 📱 تطبیق خودکار اندازه فونت */
   font-weight: 600;
   color: #fff;
   text-shadow: 0 0 6px #000, 0 0 2px #000;
@@ -17,4 +17,11 @@
   pointer-events: none;
   font-family: "Vazir", sans-serif;
   direction: rtl;
+  line-height: 1.6;
+}
+
+/* 🧠 در حالت فول‌اسکرین کمی بزرگ‌تر */
+.html5-video-player.ytp-fullscreen #fa-sub-box {
+  bottom: 100px !important;
+  font-size: clamp(20px, 2.8vw, 34px);
 }

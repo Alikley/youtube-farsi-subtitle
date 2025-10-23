@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import { downloadYouTubeAudio } from "./youtubeDownloader.js";
 import { runWhisper } from "./whisperTranscriber.js";
 import { translateToPersian } from "./translator.js";
+import { initDatabase, runSQLite } from "./database.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,6 +108,8 @@ app.get("/health", (_req, res) => {
 });
 
 const PORT = 3000;
+await initDatabase();
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}/preload`);
 });

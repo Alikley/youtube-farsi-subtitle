@@ -142,7 +142,7 @@ chrome.runtime.onMessage.addListener(
         chrome.scripting
           .executeScript({
             target: { tabId },
-            files: ["content/addCaptionButton.js", "content/captions.js"],
+            files: ["content/addCaptionButton.js", "content/caption.js"],
           })
           .then(() => console.log("✅ Scripts injected"))
           .catch((e: any) => console.error("❌ executeScript failed:", e));
@@ -150,7 +150,7 @@ chrome.runtime.onMessage.addListener(
         chrome.scripting
           .insertCSS({
             target: { tabId },
-            files: ["content/captions.css"],
+            files: ["content/style.css"],
           })
           .then(() => console.log("✅ CSS injected"))
           .catch((e: any) => console.error("❌ insertCSS failed:", e));
@@ -254,7 +254,7 @@ chrome.tabs.onUpdated.addListener((tabId: any, changeInfo: any, tab: any) => {
         target: { tabId },
         files: [
           "content/addCaptionButton.js",
-          "content/captions.js",
+          "content/caption.js",
           "content/index.js",
         ],
       })

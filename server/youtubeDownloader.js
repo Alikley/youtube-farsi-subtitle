@@ -2,120 +2,63 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import os from "os";
 import net from "net";
 import http from "http";
 
-// مسیر پوشه خروجی فایل صوتی
 const OUTPUT_DIR = path.join(process.cwd(), "downloads");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-// مسیر ابزارها
-const YTDLP_PATH = path.join(process.cwd(), "yt-dlp.exe");
-const FFMPEG_PATH =
-  "C:\\Users\\Trust.Computer\\Downloads\\ffmpeg-8.0-essentials_build\\ffmpeg-8.0-essentials_build\\bin"; // مسیر ffmpeg خودت
+// مسیر اجرایی‌ها از پوشه‌ی لوکال پروژه
+const BIN_DIR = path.join(process.cwd(), "server");
 
-// مسیر دیتابیس کوکی کروم
-const CHROME_COOKIE_DB = path.join(
-  os.homedir(),
-  "AppData",
-  "Local",
-  "Google",
-  "Chrome",
-  "User Data",
-  "Default",
-  "Network",
-  "Cookies"
-);
+const YTDLP_PATH = path.join(BIN_DIR, "./app/yt-dlp.exe");
+const FFMPEG_PATH = path.join(BIN_DIR, "./app/ffmpeg.exe");
+// const SQLITE_PATH = path.join(BIN_DIR, "sqlite3.exe");
 
-// فایل کوکی موقت (برای yt-dlp)
-const TEMP_COOKIE_FILE = path.join(
-  process.cwd(),
-  "server",
-  "youtube.com_cookies.txt"
-);
+const COOKIE_FILE = path.join(BIN_DIR, "youtube.com_cookies.txt");
 
 const POSSIBLE_PROXY_PORTS = [1080, 2080, 8080, 3128, 9050, 9999];
 
-/** 🔍 تشخیص پراکسی فعال */
+/**
+ * 🔍 تشخیص خودکار فیلترشکن لوکال (SOCKS5 یا HTTP)
+ */
 async function detectActiveProxy() {
   return new Promise((resolve) => {
-    let resolved = false;
+    let done = false;
     const finish = (proxy) => {
-      if (!resolved) {
-        resolved = true;
+      if (!done) {
+        done = true;
         resolve(proxy);
       }
     };
 
     POSSIBLE_PROXY_PORTS.forEach((port) => {
+      // تست HTTP
+      const httpTest = http.get(
+        { host: "127.0.0.1", port, path: "/", timeout: 700 },
+        () => finish(`http://127.0.0.1:${port}`)
+      );
+      httpTest.on("error", () => {});
+      httpTest.on("timeout", () => httpTest.destroy());
+
+      // تست SOCKS
       const socket = net.createConnection({ port, host: "127.0.0.1" });
-      socket.setTimeout(500);
+      socket.setTimeout(700);
       socket.on("connect", () => {
         socket.destroy();
         finish(`socks5://127.0.0.1:${port}`);
       });
       socket.on("error", () => socket.destroy());
+      socket.on("timeout", () => socket.destroy());
     });
 
-    setTimeout(() => finish(null), 1500);
+    setTimeout(() => finish(null), 2500);
   });
 }
 
-/** 🧩 استخراج کوکی‌های YouTube از دیتابیس Chrome */
-function extractYouTubeCookies() {
-  try {
-    if (!fs.existsSync(CHROME_COOKIE_DB)) {
-      console.warn("⚠️ Chrome cookie DB not found:", CHROME_COOKIE_DB);
-      return false;
-    }
-
-    // فایل موقت بسازیم تا قفل Chrome مشکلی نده
-    const tempDb = path.join(
-      os.tmpdir(),
-      `chrome_cookies_${Date.now()}.sqlite`
-    );
-    fs.copyFileSync(CHROME_COOKIE_DB, tempDb);
-
-    // اجرای دستور sqlite برای استخراج کوکی‌های youtube.com
-    const sqlite3 = spawn("sqlite3", [
-      tempDb,
-      "SELECT host_key, name, value FROM cookies WHERE host_key LIKE '%youtube.com%';",
-    ]);
-
-    let data = "";
-    sqlite3.stdout.on("data", (chunk) => (data += chunk.toString()));
-    sqlite3.stderr.on("data", (err) =>
-      console.error("sqlite3 err:", err.toString())
-    );
-
-    sqlite3.on("close", (code) => {
-      if (code === 0 && data.trim()) {
-        const cookieTxt = data
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            const [domain, name, value] = line.split("|");
-            return `${domain}\tTRUE\t/\tFALSE\t0\t${name}\t${value}`;
-          })
-          .join("\n");
-
-        fs.writeFileSync(TEMP_COOKIE_FILE, cookieTxt, "utf8");
-        console.log("🍪 Cookies extracted to:", TEMP_COOKIE_FILE);
-      } else {
-        console.warn("⚠️ Failed to extract cookies from Chrome.");
-      }
-      fs.unlinkSync(tempDb); // حذف فایل موقت
-    });
-
-    return true;
-  } catch (err) {
-    console.error("❌ Cookie extraction error:", err);
-    return false;
-  }
-}
-
-/** 🎵 دانلود صوت از YouTube با پشتیبانی از کوکی و پراکسی */
+/**
+ * 🎵 دانلود صوت از یوتیوب با yt-dlp و ffmpeg
+ */
 export async function downloadYouTubeAudio(url) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -127,11 +70,18 @@ export async function downloadYouTubeAudio(url) {
         .trim();
 
       const outputPath = path.join(OUTPUT_DIR, `audio_${Date.now()}.wav`);
+
+      // فایل‌ها باید در پروژه موجود باشند
       const ytdlpPath = fs.existsSync(YTDLP_PATH) ? YTDLP_PATH : "yt-dlp";
+      const ffmpegPath = fs.existsSync(FFMPEG_PATH) ? FFMPEG_PATH : "ffmpeg";
+      const cookiesPath = fs.existsSync(COOKIE_FILE) ? COOKIE_FILE : null;
+
       const proxy = await detectActiveProxy();
 
-      // 🔹 تلاش برای ساخت فایل کوکی
-      extractYouTubeCookies();
+      console.log("🎯 yt-dlp:", ytdlpPath);
+      console.log("🎧 ffmpeg:", ffmpegPath);
+      console.log("🍪 cookies:", cookiesPath ? "✅ used" : "❌ none");
+      console.log("🌐 proxy:", proxy || "direct");
 
       const args = [
         "-x",
@@ -139,29 +89,17 @@ export async function downloadYouTubeAudio(url) {
         "wav",
         "--no-playlist",
         "--ffmpeg-location",
-        FFMPEG_PATH,
+        path.dirname(ffmpegPath),
         "-o",
         outputPath,
-        "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-        "--add-header",
-        "accept-language:en-US,en;q=0.9",
-        "--add-header",
-        "accept-encoding:gzip, deflate, br",
-        ...(fs.existsSync(TEMP_COOKIE_FILE)
-          ? ["--cookies", TEMP_COOKIE_FILE]
-          : []),
+        ...(cookiesPath ? ["--cookies", cookiesPath] : []),
         ...(proxy ? ["--proxy", proxy] : []),
         cleanedUrl,
       ];
 
-      console.log("🎯 yt-dlp:", ytdlpPath);
-      console.log("🌐 proxy:", proxy || "direct");
-      console.log("🧩 args:", args.join(" "));
-
       const ytdlp = spawn(ytdlpPath, args, { windowsHide: true });
-      let log = "";
 
+      let log = "";
       ytdlp.stdout.on("data", (d) => (log += d.toString()));
       ytdlp.stderr.on("data", (d) => (log += d.toString()));
 
