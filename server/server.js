@@ -18,16 +18,97 @@ app.use(express.json());
 
 const COOKIE_FILE = path.join(__dirname, "youtube.com_cookies.txt");
 
-// ✅ مسیر اصلی برای دانلود، ترنسکریپت، ترجمه و حذف فایل موقت
+// مقدار لیمیت روزانه (۲ ساعت = ۷۲۰۰ ثانیه)
+const DAILY_LIMIT_SECONDS = 7200;
+
+/**
+ * ⏱ ایجاد جدول برای کنترل مصرف کاربران
+ */
+await initDatabase();
+await runSQLite(`
+  CREATE TABLE IF NOT EXISTS usage (
+    userId TEXT PRIMARY KEY,
+    usedSeconds INTEGER DEFAULT 0,
+    lastReset TEXT
+  );
+`);
+
+/**
+ * 🕓 بررسی و آپدیت مصرف روزانه کاربر
+ */
+async function checkAndUpdateUsage(userId, videoSeconds) {
+  if (!userId) throw new Error("Missing userId");
+
+  const now = new Date();
+  const today = now.toISOString().split("T")[0]; // فقط تاریخ (YYYY-MM-DD)
+
+  // دریافت رکورد کاربر
+  const row = await runSQLite(`SELECT * FROM usage WHERE userId = ?`, [userId]);
+
+  // اگر رکورد وجود نداشت → ایجاد جدید
+  if (!row) {
+    await runSQLite(
+      `INSERT INTO usage (userId, usedSeconds, lastReset) VALUES (?, ?, ?)`,
+      [userId, videoSeconds, today]
+    );
+    return { allowed: true, remaining: DAILY_LIMIT_SECONDS - videoSeconds };
+  }
+
+  // اگر روز جدیدی است → ریست مصرف
+  if (row.lastReset !== today) {
+    await runSQLite(
+      `UPDATE usage SET usedSeconds = ?, lastReset = ? WHERE userId = ?`,
+      [videoSeconds, today, userId]
+    );
+    return { allowed: true, remaining: DAILY_LIMIT_SECONDS - videoSeconds };
+  }
+
+  // بررسی مصرف فعلی
+  const totalUsed = row.usedSeconds + videoSeconds;
+  if (totalUsed > DAILY_LIMIT_SECONDS) {
+    return { allowed: false, remaining: DAILY_LIMIT_SECONDS - row.usedSeconds };
+  }
+
+  // آپدیت مصرف
+  await runSQLite(`UPDATE usage SET usedSeconds = ? WHERE userId = ?`, [
+    totalUsed,
+    userId,
+  ]);
+
+  return { allowed: true, remaining: DAILY_LIMIT_SECONDS - totalUsed };
+}
+
+/**
+ * ✅ مسیر اصلی برای پردازش ویدیو
+ */
 app.post("/preload", async (req, res) => {
   let audioPath = null;
   try {
-    const { url } = req.body;
+    const { url, userId, videoDuration } = req.body;
+
     if (!url) {
       return res
         .status(400)
         .json({ success: false, error: "No YouTube URL provided" });
     }
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "Missing userId" });
+    }
+
+    // ⏱ بررسی لیمیت
+    const duration = Number(videoDuration) || 0;
+    const usage = await checkAndUpdateUsage(userId, duration);
+
+    if (!usage.allowed) {
+      return res.status(403).json({
+        success: false,
+        error:
+          "سهمیه روزانه شما (۲ ساعت) به پایان رسیده است. لطفاً فردا دوباره تلاش کنید.",
+        remaining: 0,
+      });
+    }
+
+    console.log(`👤 User ${userId} has ${usage.remaining}s remaining today.`);
 
     console.log("🎬 [1/4] Downloading YouTube audio...");
     audioPath = await downloadYouTubeAudio(url);
@@ -59,7 +140,7 @@ app.post("/preload", async (req, res) => {
         translatedSegments.push({
           start: s.start,
           end: s.end,
-          text: s.text, // fallback: متن انگلیسی
+          text: s.text,
         });
       }
     }
@@ -70,6 +151,7 @@ app.post("/preload", async (req, res) => {
       success: true,
       englishSegments: segments,
       captions: translatedSegments,
+      remainingSeconds: usage.remaining,
     });
   } catch (err) {
     console.error("❌ /preload failed:", err);
@@ -87,7 +169,9 @@ app.post("/preload", async (req, res) => {
   }
 });
 
-// 🔄 ذخیره کوکی‌های یوتیوب از افزونه
+/**
+ * 🔄 ذخیره کوکی‌های یوتیوب از افزونه
+ */
 app.post("/upload-cookies", (req, res) => {
   try {
     const { cookies } = req.body;
@@ -102,14 +186,14 @@ app.post("/upload-cookies", (req, res) => {
   }
 });
 
-// 🩺 مسیر سلامت برای تست
+/**
+ * 🩺 مسیر سلامت برای تست
+ */
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server running and ready ✅" });
 });
 
 const PORT = 3000;
-await initDatabase();
-
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}/preload`);
 });

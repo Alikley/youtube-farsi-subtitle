@@ -2,31 +2,21 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url"; // اضافه کن
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename); // اضافه کن
+const __dirname = path.dirname(__filename);
 
-const DB_DIR = path.join(__dirname, "data"); // تغییر به __dirname
+const DB_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DB_DIR, "app.db");
-const SQLITE_PATH = path.join(__dirname, "./app/sqlite3.exe"); // تغییر به __dirname
+const SQLITE_PATH = path.join(__dirname, "./app/sqlite3.exe");
 
-// اگه مسیر دیتابیس وجود نداره، بسازش
-if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true }); // uncomment کن، خوبه!
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
-/**
- * اجرای دستور SQLite با sqlite3.exe لوکال
- */
 export async function runSQLite(query) {
   return new Promise((resolve, reject) => {
-    // دیباگ اختیاری: uncomment کن اگه لازم بود
-    // console.log("SQLite path:", SQLITE_PATH);
-    // console.log("File exists?", fs.existsSync(SQLITE_PATH));
-
     if (!fs.existsSync(SQLITE_PATH)) {
-      return reject(
-        new Error("sqlite3.exe not found in /server folder. Please add it.")
-      );
+      return reject(new Error("sqlite3.exe not found in /server/app folder."));
     }
 
     const args = [DB_PATH, query];
@@ -45,22 +35,57 @@ export async function runSQLite(query) {
   });
 }
 
-/**
- * مقداردهی اولیه دیتابیس (ساخت جدول‌ها در اولین اجرا)
- */
+// 🧱 ایجاد جدول‌ها
 export async function initDatabase() {
   if (!fs.existsSync(DB_PATH)) {
     console.log("📦 Creating new SQLite database...");
-    await runSQLite(`
-      CREATE TABLE IF NOT EXISTS downloads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        video_url TEXT,
-        file_path TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    console.log("✅ Database initialized.");
-  } else {
-    console.log("📚 Database ready:", DB_PATH);
   }
+
+  // جدول دانلودها (مثل قبل)
+  await runSQLite(`
+    CREATE TABLE IF NOT EXISTS downloads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_url TEXT,
+      file_path TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // جدول استفاده روزانه برای محدودیت کاربر
+  await runSQLite(`
+    CREATE TABLE IF NOT EXISTS user_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      seconds_used INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(user_id, day)
+    );
+  `);
+
+  console.log("✅ Database ready:", DB_PATH);
+}
+
+// 🕒 دریافت مصرف روزانه کاربر
+export async function getUserUsage(userId, day) {
+  const query = `SELECT seconds_used FROM user_usage WHERE user_id='${userId}' AND day='${day}'`;
+  const result = await runSQLite(query);
+  return result ? parseInt(result.split("|")[0]) || 0 : 0;
+}
+
+// ➕ افزودن مصرف
+export async function addUserUsage(userId, day, seconds) {
+  const existing = await getUserUsage(userId, day);
+  const newValue = existing + seconds;
+
+  const insert = `
+    INSERT OR REPLACE INTO user_usage (id, user_id, day, seconds_used)
+    VALUES (
+      (SELECT id FROM user_usage WHERE user_id='${userId}' AND day='${day}'),
+      '${userId}',
+      '${day}',
+      ${newValue}
+    );
+  `;
+  await runSQLite(insert);
+  return newValue;
 }
