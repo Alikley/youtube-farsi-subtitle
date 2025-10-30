@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { downloadYouTubeAudio } from "./youtubeDownloader.js";
 import { runWhisper } from "./whisperTranscriber.js";
-import { translateToPersian } from "./translator.js";
+import { translateWithQuota } from "./translator.js";
 import { initDatabase, runSQLite } from "./database.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -126,11 +126,16 @@ app.post("/preload", async (req, res) => {
 
     for (const s of segments) {
       try {
-        const persianText = await translateToPersian(s.text);
+        const persianText = await translateWithQuota({
+          userId,
+          text: s.text,
+          durationSeconds: Math.max(1, s.end - s.start), // مثلاً هر بخش چند ثانیه طول می‌کشه
+        });
+
         translatedSegments.push({
           start: s.start,
           end: s.end,
-          text: persianText,
+          text: persianText.translated, // چون حالا خروجی آبجکت هست
         });
       } catch (tErr) {
         console.warn(

@@ -8,10 +8,26 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
   console.log("🎬 YouTube STT content script loaded");
 
+  // ✅ ایجاد یا واکشی userId برای هر کاربر
+  async function getUserId() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(["userId"], (res) => {
+        let userId = res.userId;
+        if (!userId) {
+          userId = crypto.randomUUID();
+          chrome.storage.local.set({ userId });
+        }
+        resolve(userId);
+      });
+    });
+  }
+
   // 🔹 ارسال کوکی‌ها به سرور
-  function uploadCookiesToServer() {
+  async function uploadCookiesToServer() {
+    const userId = await getUserId();
+
     chrome.runtime.sendMessage(
-      { type: "REQUEST_UPLOAD_COOKIES" },
+      { type: "REQUEST_UPLOAD_COOKIES", userId },
       (response) => {
         if (response?.ok) {
           console.log("✅ Cookies uploaded successfully:", response.server);

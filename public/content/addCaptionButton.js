@@ -8,6 +8,33 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
   console.log("🎛️ addCaptionButton loaded and watching for CC alignment.");
 
+  // 🧠 بررسی اینکه کاربر لاگین است یا خیر
+  function isUserLoggedIn() {
+    const signInBtn = document.querySelector(
+      "ytd-button-renderer.style-suggestive[href*='ServiceLogin']"
+    );
+    const avatarBtn = document.querySelector(
+      "ytd-topbar-menu-button-renderer button#avatar-btn"
+    );
+    if (signInBtn) return false;
+    if (avatarBtn) return true;
+    return null;
+  }
+
+  // ✅ گرفتن userId از حافظه
+  async function getUserId() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(["userId"], (res) => {
+        let userId = res.userId;
+        if (!userId) {
+          userId = crypto.randomUUID();
+          chrome.storage.local.set({ userId });
+        }
+        resolve(userId);
+      });
+    });
+  }
+
   function waitForControls(timeoutMs = 10000) {
     const start = Date.now();
     return new Promise((resolve) => {
@@ -47,6 +74,8 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     svgDefault
   ) {
     try {
+      const userId = await getUserId();
+
       document.dispatchEvent(
         new CustomEvent("farsi-show-timed", {
           detail: {
@@ -65,8 +94,9 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       const resp = await fetch("http://localhost:3000/preload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, userId }),
       });
+
       const data = await resp.json();
 
       if (!data?.success)
@@ -105,6 +135,12 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
   }
 
   async function createCaptionButton() {
+    const loggedIn = isUserLoggedIn();
+    if (loggedIn === false) {
+      console.warn("🚫 User not logged in — disabling Farsi button.");
+      return;
+    }
+
     const controls = await waitForControls();
     if (!controls)
       console.warn(
@@ -176,7 +212,6 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       }
     });
 
-    // 🧩 Try to insert next to CC button (even after YouTube layout change)
     const tryInsertNextToCC = () => {
       const ccButton = document.querySelector(
         ".ytp-subtitles-button, .ytp-subtitle-button, [aria-label*='Subtitles'], [aria-label*='زیرنویس']"
@@ -189,7 +224,6 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
     tryInsertNextToCC();
 
-    // Watch for dynamic UI changes (fullscreen, layout shift, etc.)
     const uiObserver = new MutationObserver(() => {
       const ccButton = document.querySelector(
         ".ytp-subtitles-button, .ytp-subtitle-button"
@@ -201,7 +235,6 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     return btn;
   }
 
-  // React to YouTube SPA navigation
   let lastVideoId = new URL(location.href).searchParams.get("v");
   const navObserver = new MutationObserver(() => {
     const currentId = new URL(location.href).searchParams.get("v");
@@ -219,7 +252,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     }
   });
   navObserver.observe(document.body, { childList: true, subtree: true });
-  
+
   document.addEventListener("fullscreenchange", () => {
     const btn = document.getElementById("farsi-caption-btn");
     if (!btn) return;
@@ -230,5 +263,6 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       btn.style.transform = "";
     }
   });
+
   setTimeout(() => createCaptionButton(false), 600);
 }
