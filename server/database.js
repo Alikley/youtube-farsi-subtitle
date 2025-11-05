@@ -41,7 +41,7 @@ export async function initDatabase() {
     console.log("📦 Creating new SQLite database...");
   }
 
-  // جدول دانلودها (مثل قبل)
+  // جدول دانلودها
   await runSQLite(`
     CREATE TABLE IF NOT EXISTS downloads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +51,7 @@ export async function initDatabase() {
     );
   `);
 
-  // جدول استفاده روزانه برای محدودیت کاربر
+  // جدول استفاده روزانه کاربران
   await runSQLite(`
     CREATE TABLE IF NOT EXISTS user_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,17 +65,17 @@ export async function initDatabase() {
   console.log("✅ Database ready:", DB_PATH);
 }
 
-// 🕒 دریافت مصرف روزانه کاربر
+// 🕒 گرفتن مصرف روزانه کاربر
 export async function getUserUsage(userId, day) {
   const query = `SELECT seconds_used FROM user_usage WHERE user_id='${userId}' AND day='${day}'`;
   const result = await runSQLite(query);
   return result ? parseInt(result.split("|")[0]) || 0 : 0;
 }
 
-// ➕ افزودن مصرف
+// ➕ افزودن مصرف روزانه
 export async function addUserUsage(userId, day, seconds) {
-  const existing = await getUserUsage(userId, day);
-  const newValue = existing + seconds;
+  const current = await getUserUsage(userId, day);
+  const total = current + seconds;
 
   const insert = `
     INSERT OR REPLACE INTO user_usage (id, user_id, day, seconds_used)
@@ -83,9 +83,9 @@ export async function addUserUsage(userId, day, seconds) {
       (SELECT id FROM user_usage WHERE user_id='${userId}' AND day='${day}'),
       '${userId}',
       '${day}',
-      ${newValue}
+      ${total}
     );
   `;
   await runSQLite(insert);
-  return newValue;
+  return total;
 }

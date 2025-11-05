@@ -99,6 +99,13 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
       const data = await resp.json();
 
+      if (data?.usage) {
+        safeSendToBackground({
+          type: "UPDATE_USAGE",
+          usage: data.usage,
+        });
+      }
+
       if (!data?.success)
         throw new Error(data?.error || "server returned no success");
 
