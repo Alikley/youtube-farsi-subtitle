@@ -57,6 +57,11 @@ async function handlePreloadVideo(msg, sendResponse) {
             const { used, limit } = result.usage;
             await chrome.storage.local.set({ usage: { used, limit } });
             console.log(`💾 Updated usage: ${used}/${limit}`);
+            // 📢 بلافاصله پیام به popup برای آپدیت زنده
+            chrome.runtime.sendMessage({
+                type: "USAGE_UPDATED",
+                usage: { used, limit },
+            });
         }
         sendResponse(result);
     }
@@ -68,6 +73,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
     if (msg.type === "UPDATE_USAGE" && msg.usage) {
         chrome.storage.local.set({ usage: msg.usage });
         console.log("🔄 Usage updated from content:", msg.usage);
+        chrome.runtime.sendMessage({
+            type: "USAGE_UPDATED",
+            usage: msg.usage,
+        });
     }
 });
 chrome.runtime.onInstalled.addListener(() => {
