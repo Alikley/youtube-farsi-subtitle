@@ -11,9 +11,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const MAX_SECONDS_PER_DAY = Number(process.env.MAX_SECONDS_PER_DAY || 7200);
 
-/**
- * تبدیل ورودی به متن قابل ترجمه
- */
+/** نرمال‌سازی ورودی به رشته */
 function normalizeInputToString(input) {
   if (input == null) return "";
   if (typeof input === "string") return input;
@@ -50,9 +48,16 @@ function normalizeInputToString(input) {
   return String(input);
 }
 
-/**
- * ترجمه با محدودیت روزانه برای هر userId
- */
+/** پاک‌سازی نهایی فاصله‌ها بعد از ترجمه */
+function cleanPersianSpacing(text) {
+  return text
+    .replace(/\s{2,}/g, " ") // حذف فاصله‌های دوبل
+    .replace(/\s+([.,!?،؛:])/g, "$1") // حذف فاصله قبل از علائم
+    .replace(/([.,!?،؛:])([^\s])/g, "$1 $2") // فاصله بعد از علائم
+    .trim();
+}
+
+/** ترجمه با محدودیت روزانه برای هر userId */
 export async function translateWithQuota({
   userId,
   text,
@@ -69,7 +74,7 @@ export async function translateWithQuota({
     throw new Error("Daily usage limit reached");
   }
 
-  // 🧠 تنظیم داینامیک max_tokens
+  // تنظیم داینامیک max_tokens
   const length = normalized.length;
   let maxTokens = 400;
   if (length > 2000) maxTokens = 1000;
@@ -87,8 +92,15 @@ export async function translateWithQuota({
         messages: [
           {
             role: "system",
-            content:
-              "You are a professional Farsi translator. Translate the text into fluent, natural Persian with accurate tone, and avoid literal translations.",
+            content: `
+              You are a professional Persian translator.
+              Translate the text into fluent, natural Persian with the correct tone.
+              Do not translate literally.
+              Always follow Persian grammar and writing conventions.
+              Use proper spacing and half-spaces (نیم‌فاصله) when needed.
+              Examples:
+              نرم‌افزار، هوش مصنوعی، برنامه‌نویسی، می‌روم، نمی‌خواهم.
+            `,
           },
           { role: "user", content: normalized },
         ],
@@ -104,14 +116,16 @@ export async function translateWithQuota({
       }
     );
 
-    const translated =
+    let translated =
       response?.data?.choices?.[0]?.message?.content?.trim() ||
       response?.data?.choices?.[0]?.text?.trim() ||
       null;
 
     if (!translated) throw new Error("Empty translation result from DeepSeek");
 
-    // ثبت مصرف
+    // 🔧 اصلاح سبک فاصله‌ها
+    translated = cleanPersianSpacing(translated);
+
     await addUserUsage(userId, today, durationSeconds);
     const newTotal = await getUserUsage(userId, today);
 
