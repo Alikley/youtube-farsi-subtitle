@@ -162,7 +162,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
     const btn = document.createElement("button");
     btn.id = "farsi-caption-btn";
-    btn.title = "فعال‌سازی زیرنویس فارسی (FA)";
+    btn.title = "فعال‌سازی زیرنویس فارسی ";
     btn.className = "farsi-caption-btn-custom";
 
     Object.assign(btn.style, {
@@ -181,9 +181,23 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       zIndex: 999999,
     });
 
-    const svgDefault = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><rect width="24" height="24" rx="3" fill="rgba(255,255,255,0.12)"/><text x="5" y="16" font-size="10" fill="white">FA</text></svg>`;
-    const svgActive = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><rect width="24" height="24" rx="3" fill="rgba(0,170,255,0.48)"/><text x="5" y="16" font-size="10" fill="white">FA</text></svg>`;
-    const svgError = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><rect width="24" height="24" rx="3" fill="rgba(255,0,0,0.48)"/><text x="5" y="16" font-size="10" fill="white">FA</text></svg>`;
+    const svgDefault = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.12)" />
+              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
+            </svg>`;
+
+    const svgActive = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" fill="rgba(0,170,255,0.48)" />
+              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
+            </svg>`;
+
+    const svgError = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" fill="rgba(255,0,0,0.48)" />
+              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
+            </svg>`;
 
     btn.innerHTML = svgDefault;
 
@@ -193,7 +207,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     btn.addEventListener("click", async () => {
       const videoId = new URL(location.href).searchParams.get("v");
       if (!window.__farsiDownloadedForVideo) {
-        btn.style.transform = "scale(1.06)";
+        btn.style.transform = "scale(1.2)";
         await fetchCaptionsOnceForVideo(
           location.href,
           btn,

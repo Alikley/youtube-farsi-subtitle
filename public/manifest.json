@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Farsi Subtitle",
+  "name": "Navak",
   "version": "1.0.0",
-  "description": "Capture YouTube audio, send to Whisper, and show subtitles.",
+  "description": "ترجمه و نمایش زیرنویس فارسی خودکار برای ویدیوهای YouTube ",
 
   "permissions": [
     "cookies",
@@ -33,7 +33,17 @@
   ],
   "action": {
     "default_popup": "index.html",
-    "default_title": "YouTube Farsi Subtitle"
+    "default_title": "Navak",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "web_accessible_resources": [
     {
