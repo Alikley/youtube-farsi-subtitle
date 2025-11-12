@@ -3,7 +3,6 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import net from "net";
-import http from "http";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,6 +14,7 @@ const YTDLP_PATH = path.join(APP_DIR, "yt-dlp.exe");
 const FFMPEG_PATH = path.join(APP_DIR, "ffmpeg.exe");
 const SQLITE_PATH = path.join(APP_DIR, "sqlite3.exe");
 
+// دایرکتوری خروجی کلی
 const OUTPUT_DIR = path.join(process.cwd(), "downloads");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
@@ -31,15 +31,13 @@ const CHROME_COOKIE_DB = path.join(
   "Cookies"
 );
 
-// مسیر کوکی فایل افزونه
+// مسیر پیش‌فرض کوکی افزونه
 const COOKIE_FILE = path.join(__dirname, "youtube.com_cookies.txt");
 
-// کوکی موقت استخراج‌شده
-const TEMP_COOKIE_FILE = path.join(__dirname, "temp_youtube_cookies.txt");
-
+// پورت‌های احتمالی پراکسی
 const POSSIBLE_PROXY_PORTS = [1080, 2080, 8080, 3128, 9050, 9999];
 
-/** 🔍 شناسایی پراکسی فعال */
+/** 🔍 شناسایی پراکسی فعال روی لوکال */
 async function detectActiveProxy() {
   return new Promise((resolve) => {
     let resolved = false;
@@ -52,20 +50,20 @@ async function detectActiveProxy() {
 
     POSSIBLE_PROXY_PORTS.forEach((port) => {
       const socket = net.createConnection({ port, host: "127.0.0.1" });
-      socket.setTimeout(500);
+      socket.setTimeout(400);
       socket.on("connect", () => {
         socket.destroy();
-        finish(`socks5://127.0.0.1:${port}}`);
+        finish(`socks5://127.0.0.1:${port}`);
       });
       socket.on("error", () => socket.destroy());
     });
 
-    setTimeout(() => finish(null), 1500);
+    setTimeout(() => finish(null), 1200);
   });
 }
 
-/** 🍪 استخراج کوکی‌های یوتیوب از دیتابیس کروم */
-async function extractYouTubeCookies() {
+/** 🍪 استخراج کوکی‌های یوتیوب از دیتابیس کروم برای userId خاص */
+async function extractYouTubeCookies(userId) {
   return new Promise((resolve) => {
     try {
       if (!fs.existsSync(CHROME_COOKIE_DB)) {
@@ -82,19 +80,7 @@ async function extractYouTubeCookies() {
         os.tmpdir(),
         `chrome_cookies_${Date.now()}.sqlite`
       );
-
-      try {
-        fs.copyFileSync(CHROME_COOKIE_DB, tempDb);
-      } catch (err) {
-        if (err.code === "EBUSY") {
-          console.warn(
-            "⚠️ Chrome cookie DB is locked (probably browser open). Skipping cookie extraction."
-          );
-          return resolve(false);
-        } else {
-          throw err;
-        }
-      }
+      fs.copyFileSync(CHROME_COOKIE_DB, tempDb);
 
       const sqlite = spawn(SQLITE_PATH, [
         tempDb,
@@ -123,9 +109,15 @@ async function extractYouTubeCookies() {
           })
           .join("\n");
 
-        fs.writeFileSync(TEMP_COOKIE_FILE, cookieTxt, "utf8");
-        console.log("🍪 Cookies extracted from Chrome →", TEMP_COOKIE_FILE);
-        resolve(true);
+        const userCookieFile = path.join(
+          __dirname,
+          `temp_youtube_cookies_${userId}.txt`
+        );
+        fs.writeFileSync(userCookieFile, cookieTxt, "utf8");
+        console.log(
+          `🍪 Cookies extracted for user ${userId} → ${userCookieFile}`
+        );
+        resolve(userCookieFile);
       });
     } catch (err) {
       console.error("❌ Cookie extraction error:", err);
@@ -134,8 +126,8 @@ async function extractYouTubeCookies() {
   });
 }
 
-/** 🎵 دانلود صوت از YouTube */
-export async function downloadYouTubeAudio(url) {
+/** 🎵 دانلود صوت از YouTube با کوکی اختصاصی برای هر userId */
+export async function downloadYouTubeAudio(url, userId = "guest") {
   return new Promise(async (resolve, reject) => {
     try {
       if (!url) return reject(new Error("Invalid YouTube URL"));
@@ -144,13 +136,16 @@ export async function downloadYouTubeAudio(url) {
         .replace(/&list=[^&]+/g, "")
         .replace(/&t=\d+s?/g, "")
         .trim();
-      const outputPath = path.join(OUTPUT_DIR, `audio_${Date.now()}.wav`);
 
-      // 🧩 استخراج کوکی‌ها
-      let cookiesPath = null;
-      const chromeCookiesOK = await extractYouTubeCookies();
-      if (chromeCookiesOK) cookiesPath = TEMP_COOKIE_FILE;
-      else if (fs.existsSync(COOKIE_FILE)) cookiesPath = COOKIE_FILE;
+      // مسیر خروجی مجزا برای هر کاربر
+      const userOutputDir = path.join(OUTPUT_DIR, userId);
+      if (!fs.existsSync(userOutputDir))
+        fs.mkdirSync(userOutputDir, { recursive: true });
+      const outputPath = path.join(userOutputDir, `audio_${Date.now()}.wav`);
+
+      // 🧩 استخراج کوکی‌های اختصاصی
+      let cookiesPath = await extractYouTubeCookies(userId);
+      if (!cookiesPath && fs.existsSync(COOKIE_FILE)) cookiesPath = COOKIE_FILE;
 
       const proxy = await detectActiveProxy();
 
@@ -174,8 +169,11 @@ export async function downloadYouTubeAudio(url) {
         cleanedUrl,
       ];
 
-      console.log("🎯 yt-dlp:", YTDLP_PATH);
-      console.log("🍪 cookies:", cookiesPath ? "✅ used" : "❌ none");
+      console.log(`🎧 [${userId}] yt-dlp starting...`);
+      console.log(
+        "🍪 cookies:",
+        cookiesPath ? path.basename(cookiesPath) : "❌ none"
+      );
       console.log("🌐 proxy:", proxy || "direct");
 
       const ytdlp = spawn(YTDLP_PATH, args, { windowsHide: true });
@@ -186,11 +184,11 @@ export async function downloadYouTubeAudio(url) {
 
       ytdlp.on("close", (code) => {
         if (code === 0 && fs.existsSync(outputPath)) {
-          console.log("✅ YouTube audio downloaded:", outputPath);
+          console.log(`✅ [${userId}] YouTube audio downloaded: ${outputPath}`);
           resolve(outputPath);
         } else {
-          console.error("❌ yt-dlp failed:\n", log);
-          reject(new Error("yt-dlp download failed. Check logs."));
+          console.error(`❌ [${userId}] yt-dlp failed:\n`, log);
+          reject(new Error("yt-dlp download failed"));
         }
       });
     } catch (err) {

@@ -16,13 +16,23 @@ async function postJSON(url, data) {
     }
 }
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === "REQUEST_UPLOAD_COOKIES") {
-        handleUploadCookies(msg, sendResponse);
-        return true;
-    }
-    if (msg.type === "REQUEST_PRELOAD_VIDEO") {
-        handlePreloadVideo(msg, sendResponse);
-        return true;
+    switch (msg.type) {
+        case "REQUEST_UPLOAD_COOKIES":
+            handleUploadCookies(msg, sendResponse);
+            return true;
+        case "REQUEST_PRELOAD_VIDEO":
+            handlePreloadVideo(msg, sendResponse);
+            return true;
+        case "UPDATE_USAGE":
+            if (msg.usage) {
+                chrome.storage.local.set({ usage: msg.usage });
+                console.log("🔄 Usage updated:", msg.usage);
+                chrome.runtime.sendMessage({
+                    type: "USAGE_UPDATED",
+                    usage: msg.usage,
+                });
+            }
+            return;
     }
 });
 async function handleUploadCookies(msg, sendResponse) {
@@ -32,7 +42,9 @@ async function handleUploadCookies(msg, sendResponse) {
             msg.userId = stored.userId || "anonymous_user";
         }
         cachedUserId = msg.userId;
-        const cookies = await chrome.cookies.getAll({ domain: ".youtube.com" });
+        const cookies = await chrome.cookies.getAll({
+            url: "https://www.youtube.com",
+        });
         const cookieTxt = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
         cachedCookies = cookieTxt;
         const result = await postJSON("http://localhost:3000/upload-cookies", {
@@ -57,7 +69,6 @@ async function handlePreloadVideo(msg, sendResponse) {
             const { used, limit } = result.usage;
             await chrome.storage.local.set({ usage: { used, limit } });
             console.log(`💾 Updated usage: ${used}/${limit}`);
-            // 📢 بلافاصله پیام به popup برای آپدیت زنده
             chrome.runtime.sendMessage({
                 type: "USAGE_UPDATED",
                 usage: { used, limit },
@@ -69,16 +80,6 @@ async function handlePreloadVideo(msg, sendResponse) {
         sendResponse({ success: false, error: err.message });
     }
 }
-chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
-    if (msg.type === "UPDATE_USAGE" && msg.usage) {
-        chrome.storage.local.set({ usage: msg.usage });
-        console.log("🔄 Usage updated from content:", msg.usage);
-        chrome.runtime.sendMessage({
-            type: "USAGE_UPDATED",
-            usage: msg.usage,
-        });
-    }
-});
 chrome.runtime.onInstalled.addListener(() => {
     console.log("🚀 Extension installed and background active");
 });

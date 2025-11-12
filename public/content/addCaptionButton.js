@@ -8,7 +8,9 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
   console.log("🎛️ addCaptionButton loaded and watching for CC alignment.");
 
-  // 🧠 بررسی اینکه کاربر لاگین است یا خیر
+  let uiObserver = null;
+  let navObserver = null;
+
   function isUserLoggedIn() {
     const signInBtn = document.querySelector(
       "ytd-button-renderer.style-suggestive[href*='ServiceLogin']"
@@ -21,7 +23,6 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     return null;
   }
 
-  // ✅ گرفتن userId از حافظه
   async function getUserId() {
     return new Promise((resolve) => {
       chrome.storage.local.get(["userId"], (res) => {
@@ -181,23 +182,9 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       zIndex: 999999,
     });
 
-    const svgDefault = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.12)" />
-              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
-            </svg>`;
-
-    const svgActive = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" fill="rgba(0,170,255,0.48)" />
-              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
-            </svg>`;
-
-    const svgError = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="10" fill="rgba(255,0,0,0.48)" />
-              <text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text>
-            </svg>`;
+    const svgDefault = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.12)" /><text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text></svg>`;
+    const svgActive = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(0,170,255,0.48)" /><text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text></svg>`;
+    const svgError = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(255,0,0,0.48)" /><text x="7" y="17" font-size="12" font-weight="bold" fill="white" font-family="Arial, sans-serif">N</text></svg>`;
 
     btn.innerHTML = svgDefault;
 
@@ -245,7 +232,8 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
 
     tryInsertNextToCC();
 
-    const uiObserver = new MutationObserver(() => {
+    if (uiObserver) uiObserver.disconnect();
+    uiObserver = new MutationObserver(() => {
       const ccButton = document.querySelector(
         ".ytp-subtitles-button, .ytp-subtitle-button"
       );
@@ -257,11 +245,13 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
   }
 
   let lastVideoId = new URL(location.href).searchParams.get("v");
-  const navObserver = new MutationObserver(() => {
+  if (navObserver) navObserver.disconnect();
+  navObserver = new MutationObserver(() => {
     const currentId = new URL(location.href).searchParams.get("v");
     if (currentId !== lastVideoId) {
       console.log("🎬 Video changed:", lastVideoId, "→", currentId);
       lastVideoId = currentId;
+      if (uiObserver) uiObserver.disconnect();
       window.__farsiCachedCaptions = null;
       window.__farsiDownloadedForVideo = false;
       window.__farsiSubsActive = false;
@@ -270,6 +260,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       const btn = document.getElementById("farsi-caption-btn");
       if (btn)
         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><rect width="24" height="24" rx="3" fill="rgba(255,255,255,0.12)"/><text x="5" y="16" font-size="10" fill="white">FA</text></svg>`;
+      setTimeout(() => createCaptionButton(), 400);
     }
   });
   navObserver.observe(document.body, { childList: true, subtree: true });
@@ -277,12 +268,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
   document.addEventListener("fullscreenchange", () => {
     const btn = document.getElementById("farsi-caption-btn");
     if (!btn) return;
-
-    if (document.fullscreenElement) {
-      btn.style.transform = "translateY(-6px)";
-    } else {
-      btn.style.transform = "";
-    }
+    btn.style.transform = document.fullscreenElement ? "translateY(-6px)" : "";
   });
 
   setTimeout(() => createCaptionButton(false), 600);

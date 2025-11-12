@@ -1,9 +1,9 @@
 console.log("⚙️ [Background] Service worker loaded");
 
-let cachedUserId: string | null = null;
-let cachedCookies: string | null = null;
+let cachedUserId = null;
+let cachedCookies = null;
 
-async function postJSON(url: string, data: any) {
+async function postJSON(url, data) {
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -11,24 +11,34 @@ async function postJSON(url: string, data: any) {
       body: JSON.stringify(data),
     });
     return await res.json();
-  } catch (err: any) {
+  } catch (err) {
     console.error(`❌ POST ${url} failed:`, err);
     return { success: false, error: err.message };
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "REQUEST_UPLOAD_COOKIES") {
-    handleUploadCookies(msg, sendResponse);
-    return true;
-  }
-  if (msg.type === "REQUEST_PRELOAD_VIDEO") {
-    handlePreloadVideo(msg, sendResponse);
-    return true;
+  switch (msg.type) {
+    case "REQUEST_UPLOAD_COOKIES":
+      handleUploadCookies(msg, sendResponse);
+      return true;
+    case "REQUEST_PRELOAD_VIDEO":
+      handlePreloadVideo(msg, sendResponse);
+      return true;
+    case "UPDATE_USAGE":
+      if (msg.usage) {
+        chrome.storage.local.set({ usage: msg.usage });
+        console.log("🔄 Usage updated:", msg.usage);
+        chrome.runtime.sendMessage({
+          type: "USAGE_UPDATED",
+          usage: msg.usage,
+        });
+      }
+      return;
   }
 });
 
-async function handleUploadCookies(msg: any, sendResponse: any) {
+async function handleUploadCookies(msg, sendResponse) {
   try {
     if (!msg.userId) {
       const stored = await chrome.storage.local.get(["userId"]);
@@ -37,8 +47,11 @@ async function handleUploadCookies(msg: any, sendResponse: any) {
 
     cachedUserId = msg.userId;
 
-    const cookies = await chrome.cookies.getAll({ domain: ".youtube.com" });
+    const cookies = await chrome.cookies.getAll({
+      url: "https://www.youtube.com",
+    });
     const cookieTxt = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+
     cachedCookies = cookieTxt;
 
     const result = await postJSON("http://localhost:3000/upload-cookies", {
@@ -47,12 +60,12 @@ async function handleUploadCookies(msg: any, sendResponse: any) {
     });
 
     sendResponse({ ok: true, server: result });
-  } catch (err: any) {
+  } catch (err) {
     sendResponse({ ok: false, error: err.message });
   }
 }
 
-async function handlePreloadVideo(msg: any, sendResponse: any) {
+async function handlePreloadVideo(msg, sendResponse) {
   try {
     const { videoUrl, userId } = msg;
     const finalUserId = userId || cachedUserId || "anonymous_user";
@@ -66,8 +79,6 @@ async function handlePreloadVideo(msg: any, sendResponse: any) {
       const { used, limit } = result.usage;
       await chrome.storage.local.set({ usage: { used, limit } });
       console.log(`💾 Updated usage: ${used}/${limit}`);
-
-      // 📢 بلافاصله پیام به popup برای آپدیت زنده
       chrome.runtime.sendMessage({
         type: "USAGE_UPDATED",
         usage: { used, limit },
@@ -75,22 +86,10 @@ async function handlePreloadVideo(msg: any, sendResponse: any) {
     }
 
     sendResponse(result);
-  } catch (err: any) {
+  } catch (err) {
     sendResponse({ success: false, error: err.message });
   }
 }
-
-chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
-  if (msg.type === "UPDATE_USAGE" && msg.usage) {
-    chrome.storage.local.set({ usage: msg.usage });
-    console.log("🔄 Usage updated from content:", msg.usage);
-
-    chrome.runtime.sendMessage({
-      type: "USAGE_UPDATED",
-      usage: msg.usage,
-    });
-  }
-});
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("🚀 Extension installed and background active");
