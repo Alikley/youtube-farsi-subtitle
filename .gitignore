@@ -24,6 +24,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # ignore large model and whisper source
+**/node_modules
 /server/models/ggml-base.bin
 /server/app/ffmpeg.exe
 /server/app/sqlite3.exe

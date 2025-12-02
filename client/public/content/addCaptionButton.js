@@ -7,7 +7,8 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
   window.FarsiSubtitle = window.FarsiSubtitle || {};
 
   console.log("🎛️ addCaptionButton loaded and watching for CC alignment.");
-
+  const API_BASE_URL = "https://alikley933-navak.hf.space";
+  const POLL_INTERVAL = 5000; // 5 ثانیه
   let uiObserver = null;
   let navObserver = null;
 
@@ -67,6 +68,74 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
     window.postMessage({ __farsi_ext: true, payload: message }, "*");
   }
 
+  async function startPolling(
+    jobId,
+    btn,
+    svgActive,
+    svgError,
+    svgDefault,
+    resolve
+  ) {
+    // 💡 نمایش وضعیت اولیه (در حال پردازش)
+    btn.innerHTML = svgActive;
+    btn.title = "زیرنویس فارسی: در حال پردازش...";
+
+    const pollingCheck = async () => {
+      const response = await new Promise((res, rej) => {
+        // 🎯 ارسال پیام به Background Service Worker برای چک کردن وضعیت
+        chrome.runtime.sendMessage(
+          {
+            type: "REQUEST_JOB_STATUS",
+            jobId: jobId,
+          },
+          (resp) => {
+            if (resp.success) {
+              res(resp.data);
+            } else {
+              rej(resp.error || "Failed to get status from server.");
+            }
+          }
+        );
+      });
+
+      const status = response.status;
+
+      if (status === "COMPLETED") {
+        clearInterval(window.__farsiPollingInterval);
+        console.log("✅ Job Completed!");
+
+        // 💰 به‌روزرسانی مصرف باید در اینجا انجام شود (با فرض اینکه سرور مقدار استفاده شده را برمی‌گرداند)
+        // چون سرور شما فقط مصرف مجاز را در start-job چک می‌کند، باید logic addUserUsage در jobProcessor.js نهایی شود.
+
+        const captions = response.captions || [];
+
+        // 💡 نمایش موفقیت
+        btn.title = "زیرنویس فارسی: روشن (کلیک برای قطع)";
+        btn.innerHTML = svgActive;
+
+        // Resolve promise و بازگرداندن زیرنویس‌ها
+        resolve({ captions: captions });
+        return;
+      } else if (status === "FAILED") {
+        clearInterval(window.__farsiPollingInterval);
+        console.error("❌ Job Failed. Error:", response.error);
+        // 💡 نمایش خطا
+        btn.innerHTML = svgError;
+        setTimeout(() => (btn.innerHTML = svgDefault), 3500);
+        resolve({ error: response.error });
+        return;
+      } else {
+        console.log(`⏳ Job ${jobId} status: ${status}. Polling...`);
+        // ادامه Polling
+      }
+    };
+
+    // شروع Polling
+    window.__farsiPollingInterval = setInterval(pollingCheck, POLL_INTERVAL);
+    // اجرای فوری برای جلوگیری از تأخیر اولیه
+    pollingCheck();
+  }
+
   async function fetchCaptionsOnceForVideo(
     url,
     btn,
@@ -76,7 +145,9 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
   ) {
     try {
       const userId = await getUserId();
+      const videoDuration = document.querySelector("video")?.duration || 0; // 💡 دریافت مدت زمان ویدیو
 
+      // 💡 نمایش پیام اولیه
       document.dispatchEvent(
         new CustomEvent("farsi-show-timed", {
           detail: {
@@ -84,7 +155,7 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
               {
                 start: 0,
                 end: 9999,
-                text: "لطفاً بین ۱ تا ۲ دقیقه صبر کنید، زیرنویس در حال آماده‌سازی است...",
+                text: "لطفاً بین ۱ تا ۵ دقیقه صبر کنید، زیرنویس در حال آماده‌سازی است...",
               },
             ],
           },
@@ -92,36 +163,47 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       );
       btn.innerHTML = svgActive;
 
-      const resp = await fetch("http://localhost:3000/preload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, userId }),
+      // ۱. ارسال درخواست شروع کار (REQUEST_START_JOB)
+      const startResponse = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          {
+            type: "REQUEST_START_JOB",
+            videoUrl: url,
+            userId: userId,
+            videoDuration: videoDuration,
+          },
+          resolve
+        );
       });
 
-      const data = await resp.json();
-
-      if (data?.usage) {
-        safeSendToBackground({
-          type: "UPDATE_USAGE",
-          usage: data.usage,
-        });
+      if (!startResponse.success || startResponse.status !== 202) {
+        const error =
+          startResponse.data?.error ||
+          startResponse.error ||
+          "Failed to start job.";
+        throw new Error(error);
       }
 
-      if (!data?.success)
-        throw new Error(data?.error || "server returned no success");
+      const jobId = startResponse.data.jobId;
+      console.log(`✅ Job started with ID: ${jobId}`);
 
-      const captions = data.captions?.length
-        ? data.captions
-        : data.englishSegments?.length
-        ? data.englishSegments
-        : [
-            {
-              start: 0,
-              end: 9999,
-              text: data.persian || data.fullText || "No subtitles",
-            },
-          ];
+      // ۲. شروع Polling و انتظار برای نتیجه
+      const jobResult = await new Promise((resolve) => {
+        // شروع Polling در تابع جدید
+        startPolling(jobId, btn, svgActive, svgError, svgDefault, resolve);
+      });
 
+      // ۳. پردازش نتیجه
+      if (jobResult.error) {
+        throw new Error(jobResult.error);
+      }
+
+      const captions = jobResult.captions;
+      if (!captions || captions.length === 0) {
+        throw new Error("No captions returned.");
+      }
+
+      // ۴. ذخیره و نمایش زیرنویس‌ها
       window.__farsiCachedCaptions = captions;
       window.__farsiDownloadedForVideo = true;
       window.__farsiSubsActive = true;
@@ -130,15 +212,21 @@ if (window.__FARSI_ADD_BTN_LOADED__) {
       document.dispatchEvent(
         new CustomEvent("farsi-show-timed", { detail: { captions } })
       );
-
-      btn.title = "زیرنویس فارسی: روشن (کلیک برای قطع)";
-      btn.innerHTML = svgActive;
     } catch (err) {
-      console.error("❌ preload failed:", err);
+      console.error("❌ Job processing failed:", err);
       btn.innerHTML = svgError;
       setTimeout(() => (btn.innerHTML = svgDefault), 3500);
       window.__farsiDownloadedForVideo = false;
       window.__farsiSubsActive = false;
+
+      // نمایش خطای نهایی به کاربر
+      document.dispatchEvent(
+        new CustomEvent("farsi-show-timed", {
+          detail: {
+            captions: [{ start: 0, end: 9999, text: `❌ خطا: ${err.message}` }],
+          },
+        })
+      );
     }
   }
 

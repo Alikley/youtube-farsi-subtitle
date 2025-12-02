@@ -1,18 +1,14 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
+import axios from "axios";
+import FormData from "form-data";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// مسیر اجرای whisper-cli
-const WHISPER_PATH = path.resolve(
-  __dirname,
-  "../whisper.cpp/build/bin/Release/whisper-cli.exe"
-);
-
-// مسیر مدل
+// مسیر مدل (فقط برای نسخه غیر-داکری)
 const MODEL_PATH = path.resolve(__dirname, "./models/ggml-base.bin");
 
 // مسیر پوشه دانلودها
@@ -22,9 +18,6 @@ if (!fs.existsSync(DOWNLOADS_DIR)) {
   console.log("📂 Created downloads folder:", DOWNLOADS_DIR);
 }
 
-/**
- * استخراج segmentها از JSON خروجی whisper.cpp
- */
 function extractSegmentsFromJson(data) {
   if (!data) return [];
   if (Array.isArray(data.segments)) return data.segments;
@@ -35,9 +28,6 @@ function extractSegmentsFromJson(data) {
   return [];
 }
 
-/**
- * استخراج segmentها از خروجی متنی whisper (stdout)
- */
 function parseSegmentsFromTextOutput(textOutput) {
   const regex =
     /\[(\d{2}):(\d{2}):(\d{2}\.\d{3})\s-->\s(\d{2}):(\d{2}):(\d{2}\.\d{3})\]\s+(.+)/g;
@@ -58,82 +48,95 @@ function parseSegmentsFromTextOutput(textOutput) {
   return segments;
 }
 
-/**
- * اجرای whisper.cpp روی فایل صوتی و برگرداندن segmentها با زمان‌بندی
- */
 export async function runWhisper(audioPath) {
   return new Promise((resolve, reject) => {
-    const resolvedAudioPath = path.resolve(audioPath);
-    const outputBase = path.join(DOWNLOADS_DIR, `whisper_${Date.now()}`);
-    const outputJson = `${outputBase}.json`;
+    if (!fs.existsSync(WHISPER_BINARY)) {
+      return reject(
+        new Error(`Whisper binary not found at: ${WHISPER_BINARY}`)
+      );
+    }
+
+    // مسیر خروجی JSON موقت
+    const jsonOutputPath = `${audioPath}.json`;
 
     const args = [
       "-m",
       MODEL_PATH,
       "-f",
-      resolvedAudioPath,
-      "--output-json",
+      audioPath,
+      "-ojf", // خروجی json file
       "-of",
-      outputBase,
-      "--language",
-      "en",
-      "--print-progress",
-      "false",
+      path.basename(jsonOutputPath, ".json"), // نام فایل خروجی بدون پسوند
+      "-otxt",
+      "-osub", // این آرگومان‌ها را برای گرفتن خروجی JSON اضافه کردم
     ];
 
-    console.log("🧠 Running Whisper:", WHISPER_PATH, args.join(" "));
-    const whisper = spawn(WHISPER_PATH, args, { windowsHide: true });
+    console.log(
+      `🧠 [Whisper] Transcribing audio with command: ${WHISPER_BINARY} ${args.join(
+        " "
+      )}`
+    );
 
-    let stderrData = "";
-    let stdoutData = "";
-
-    whisper.stderr.on("data", (d) => (stderrData += d.toString()));
-    whisper.stdout.on("data", (d) => (stdoutData += d.toString()));
-
-    whisper.on("error", (err) => {
-      reject(new Error(`Failed to start Whisper process: ${err.message}`));
+    const whisper = spawn(WHISPER_BINARY, args, {
+      cwd: path.dirname(audioPath), // اجرای در دایرکتوری موقت
+      windowsHide: true,
     });
 
+    let log = "";
+    whisper.stdout.on("data", (d) => (log += d.toString()));
+    whisper.stderr.on("data", (d) => (log += d.toString()));
+
     whisper.on("close", (code) => {
+      // 🧹 پاکسازی فایل‌های موقت
+      const tempJsonFile = path.join(
+        path.dirname(audioPath),
+        path.basename(jsonOutputPath)
+      );
+
       if (code !== 0) {
-        console.error("❌ Whisper exited with code:", code);
-        console.error(stderrData);
+        if (fs.existsSync(tempJsonFile)) fs.unlinkSync(tempJsonFile);
+        console.error(`❌ Whisper execution failed (Code: ${code}):\n`, log);
+        return reject(new Error(`Whisper failed: ${log.slice(0, 500)}`));
+      }
+
+      if (!fs.existsSync(tempJsonFile)) {
+        console.error(
+          `❌ Whisper done, but JSON file not found: ${tempJsonFile}`
+        );
         return reject(
-          new Error(
-            `Whisper failed (code ${code}): ${stderrData || "no stderr"}`
-          )
+          new Error("Whisper completed, but failed to generate JSON file.")
         );
       }
 
-      let segments = [];
-
       try {
-        if (fs.existsSync(outputJson)) {
-          const raw = fs.readFileSync(outputJson, "utf8");
-          const jsonData = JSON.parse(raw);
-          const rawSegments = extractSegmentsFromJson(jsonData);
-          segments = rawSegments.map((s) => ({
-            start: Number(s.start ?? s.t0 ?? 0),
-            end: Number(s.end ?? s.t1 ?? 0),
-            text: (s.text || "").trim(),
-          }));
-          fs.unlinkSync(outputJson);
-        }
+        const jsonData = fs.readFileSync(tempJsonFile, "utf8");
+        const data = JSON.parse(jsonData);
 
-        // اگر تایم‌ها صفر بودن، از خروجی متنی بخون
-        if (!segments.length || segments.every((s) => s.start === 0)) {
-          console.log("⚙️ Extracting timestamps from text output...");
-          segments = parseSegmentsFromTextOutput(stdoutData);
-        }
+        // 🧹 حذف فایل‌های موقت تولید شده
+        fs.unlinkSync(tempJsonFile);
+        // اگر ساب هم تولید کرده، حذف شود.
+        const srtFile = tempJsonFile.replace(".json", ".srt");
+        if (fs.existsSync(srtFile)) fs.unlinkSync(srtFile);
+
+        let segments = data.result.segments.map((s) => ({
+          start: s.t0 / 1000,
+          end: s.t1 / 1000,
+          text: s.text.trim(),
+        }));
 
         const fullText = segments
           .map((s) => s.text)
           .join(" ")
           .trim();
+
         console.log(`✅ Whisper done. ${segments.length} segments found.`);
         resolve({ segments, fullText });
       } catch (err) {
-        reject(err);
+        console.error(
+          "❌ Failed to read or parse Whisper JSON output:",
+          err.message
+        );
+        reject(new Error("Failed to process Whisper output."));
       }
     });
   });

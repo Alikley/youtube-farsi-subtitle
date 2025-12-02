@@ -12,9 +12,9 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://www.youtube.com/*",
-    "http://localhost:3000/*"
-  ],
+        "*://www.youtube.com/*",
+        "https://alikley933-navak.hf.space/*" 
+    ],
   "background": {
     "service_worker": "background/index.js",
     "type": "module"

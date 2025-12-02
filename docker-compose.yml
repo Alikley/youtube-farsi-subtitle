@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  navak-backend:
+    # استفاده از Dockerfile ترکیبی که در روت پروژه (کنار پوشه server) قرار دارد
+    build:
+      context: . 
+      dockerfile: Dockerfile
+    container_name: navak-backend-single
+    restart: always
+    ports:
+      - "3000:7860" 
+    env_file:
+      - ./.env
+    volumes:
+      - ./server/data:/app/server/data
+      - ./downloads:/app/downloads 
+
+
+  frontend:
+    build: ./client
+    container_name: navak-frontend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./client:/app
+    env_file:
+      - ./.env
+

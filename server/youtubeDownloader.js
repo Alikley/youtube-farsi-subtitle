@@ -128,7 +128,15 @@ async function extractYouTubeCookies(userId) {
 
 /** 🎵 دانلود صوت از YouTube با کوکی اختصاصی برای هر userId */
 export async function downloadYouTubeAudio(url, userId = "guest") {
+  // 🛠️ اصلاح شد: فقط یک "new" باید باشد
   return new Promise(async (resolve, reject) => {
+    const userCookieFile = path.join(
+      __dirname,
+      `temp_youtube_cookies_${userId}.txt`
+    );
+    let cookiesPath = fs.existsSync(COOKIE_FILE) ? COOKIE_FILE : null;
+    const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || null;
+
     try {
       if (!url) return reject(new Error("Invalid YouTube URL"));
 
@@ -137,58 +145,54 @@ export async function downloadYouTubeAudio(url, userId = "guest") {
         .replace(/&t=\d+s?/g, "")
         .trim();
 
-      // مسیر خروجی مجزا برای هر کاربر
       const userOutputDir = path.join(OUTPUT_DIR, userId);
       if (!fs.existsSync(userOutputDir))
         fs.mkdirSync(userOutputDir, { recursive: true });
+
       const outputPath = path.join(userOutputDir, `audio_${Date.now()}.wav`);
-
-      // 🧩 استخراج کوکی‌های اختصاصی
-      let cookiesPath = await extractYouTubeCookies(userId);
-      if (!cookiesPath && fs.existsSync(COOKIE_FILE)) cookiesPath = COOKIE_FILE;
-
-      const proxy = await detectActiveProxy();
 
       const args = [
         "-x",
         "--audio-format",
         "wav",
+        "--audio-quality",
+        "0",
         "--no-playlist",
-        "--ffmpeg-location",
-        path.dirname(FFMPEG_PATH),
         "-o",
         outputPath,
         "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
         "--add-header",
         "accept-language:en-US,en;q=0.9",
         "--add-header",
         "accept-encoding:gzip, deflate, br",
+        "--no-check-certificate", // اضافه شده برای جلوگیری از خطاهای SSL
         ...(cookiesPath ? ["--cookies", cookiesPath] : []),
         ...(proxy ? ["--proxy", proxy] : []),
         cleanedUrl,
       ];
 
       console.log(`🎧 [${userId}] yt-dlp starting...`);
-      console.log(
-        "🍪 cookies:",
-        cookiesPath ? path.basename(cookiesPath) : "❌ none"
-      );
-      console.log("🌐 proxy:", proxy || "direct");
 
-      const ytdlp = spawn(YTDLP_PATH, args, { windowsHide: true });
+      const ytdlp = spawn(YTDLP_PATH, args, { windowsHide: false });
       let log = "";
 
       ytdlp.stdout.on("data", (d) => (log += d.toString()));
       ytdlp.stderr.on("data", (d) => (log += d.toString()));
 
       ytdlp.on("close", (code) => {
+        if (fs.existsSync(userCookieFile)) {
+          try {
+            fs.unlinkSync(userCookieFile);
+          } catch (e) {}
+        }
+
         if (code === 0 && fs.existsSync(outputPath)) {
           console.log(`✅ [${userId}] YouTube audio downloaded: ${outputPath}`);
           resolve(outputPath);
         } else {
-          console.error(`❌ [${userId}] yt-dlp failed:\n`, log);
-          reject(new Error("yt-dlp download failed"));
+          console.error(`❌ [${userId}] yt-dlp failed (Code: ${code}):\n`, log);
+          reject(new Error(`yt-dlp download failed: ${log.slice(0, 500)}`));
         }
       });
     } catch (err) {

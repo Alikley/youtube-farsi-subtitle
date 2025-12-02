@@ -1,4 +1,6 @@
 // server/translator.js
+// نیازی به تغییر ندارد - منطق کسب‌وکار (DeepSeek و Usage) صحیح است.
+
 import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
@@ -13,6 +15,7 @@ const MAX_SECONDS_PER_DAY = Number(process.env.MAX_SECONDS_PER_DAY || 7200);
 
 /** نرمال‌سازی ورودی به رشته */
 function normalizeInputToString(input) {
+  // ... (منطق نرمال‌سازی بدون تغییر)
   if (input == null) return "";
   if (typeof input === "string") return input;
   if (Array.isArray(input)) {
@@ -70,6 +73,7 @@ export async function translateWithQuota({
   const today = new Date().toISOString().slice(0, 10);
   const used = await getUserUsage(userId, today);
 
+  // ⚠️ توجه: این منطق در jobProcessor هم چک می‌شود، اما برای اطمینان مجدداً اینجاست.
   if (used >= MAX_SECONDS_PER_DAY) {
     throw new Error("Daily usage limit reached");
   }
@@ -93,14 +97,14 @@ export async function translateWithQuota({
           {
             role: "system",
             content: `
-              You are a professional Persian translator.
-              Translate the text into fluent, natural Persian with the correct tone.
-              Do not translate literally.
-              Always follow Persian grammar and writing conventions.
-              Use proper spacing and half-spaces (نیم‌فاصله) when needed.
-              Examples:
-              نرم‌افزار، هوش مصنوعی، برنامه‌نویسی، می‌روم، نمی‌خواهم.
-            `,
+                            You are a professional Persian translator.
+                            Translate the text into fluent, natural Persian with the correct tone.
+                            Do not translate literally.
+                            Always follow Persian grammar and writing conventions.
+                            Use proper spacing and half-spaces (نیم‌فاصله) when needed.
+                            Examples:
+                            نرم‌افزار، هوش مصنوعی، برنامه‌نویسی، می‌روم، نمی‌خواهم.
+                        `,
           },
           { role: "user", content: normalized },
         ],
@@ -126,6 +130,7 @@ export async function translateWithQuota({
     // 🔧 اصلاح سبک فاصله‌ها
     translated = cleanPersianSpacing(translated);
 
+    // 🎯 ثبت مصرف بعد از ترجمه موفق
     await addUserUsage(userId, today, durationSeconds);
     const newTotal = await getUserUsage(userId, today);
 

@@ -4,10 +4,15 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { downloadYouTubeAudio } from "./youtubeDownloader.js";
-import { runWhisper } from "./whisperTranscriber.js";
-import { translateWithQuota } from "./translator.js";
-import { initDatabase, getUserUsage, addUserUsage } from "./database.js";
+import {
+  initDatabase,
+  createJob,
+  getJobStatus,
+  getUserUsage,
+  addUserUsage,
+} from "./database.js"; // توابع Usage و Job
+import { processVideoJob } from "./jobProcessor.js"; // Worker پس‌زمینه
+import { v4 as uuidv4 } from "uuid"; // نیاز به نصب: npm install uuid
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +27,7 @@ const DAILY_LIMIT_SECONDS = 7200;
 await initDatabase();
 
 /**
- * 🕓 بررسی و بروزرسانی مصرف روزانه
+ * 🕓 بررسی و بروزرسانی مصرف روزانه (باید قبل از شروع Job چک شود)
  */
 async function checkAndUpdateUsage(userId, videoSeconds) {
   const today = new Date().toISOString().split("T")[0];
@@ -33,20 +38,22 @@ async function checkAndUpdateUsage(userId, videoSeconds) {
     return { allowed: false, used, remaining: 0 };
   }
 
-  const newUsed = await addUserUsage(userId, today, videoSeconds);
-  const remaining = Math.max(0, DAILY_LIMIT_SECONDS - newUsed);
-  return { allowed: true, used: newUsed, remaining };
+  // مصرف را در اینجا اضافه نمی‌کنیم تا Job با موفقیت کامل شود.
+  // فقط بررسی می‌کنیم که آیا مجاز است یا نه.
+  const remaining = Math.max(0, DAILY_LIMIT_SECONDS - totalUsed);
+  return { allowed: true, used: used, remaining: remaining };
 }
 
 /**
- * ✅ مسیر اصلی پردازش ویدیو
+ * 🚀 مسیر شروع پردازش (Asynchronous)
  */
-app.post("/preload", async (req, res) => {
-  let audioPath = null;
+app.post("/start-job", async (req, res) => {
   try {
     const { url, userId, videoDuration } = req.body;
-    if (!url || !userId)
-      return res.status(400).json({ success: false, error: "Missing data" });
+    if (!url || !userId || !videoDuration)
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing URL, User ID, or Duration" });
 
     const duration = Number(videoDuration) || 0;
     const usage = await checkAndUpdateUsage(userId, duration);
@@ -59,69 +66,76 @@ app.post("/preload", async (req, res) => {
       });
     }
 
+    const jobId = uuidv4();
+    await createJob(jobId, url, userId);
+
+    // شروع پردازش در پس‌زمینه (Non-blocking)
+    setImmediate(() => {
+      processVideoJob(jobId, url, userId, duration);
+    });
+
     console.log(
-      `👤 User ${userId}: used ${usage.used}s / ${DAILY_LIMIT_SECONDS}s`
+      `✅ [JOB ${jobId}] Job created and processing started in background.`
     );
 
-    console.log("🎬 [1/4] Downloading YouTube audio...");
-    audioPath = await downloadYouTubeAudio(url);
-
-    console.log("🧠 [2/4] Transcribing audio...");
-    const { segments, fullText } = await runWhisper(audioPath);
-
-    const translatedSegments = [];
-    for (const s of segments) {
-      try {
-        const persianText = await translateWithQuota({
-          userId,
-          text: s.text,
-          durationSeconds: Math.max(1, s.end - s.start),
-        });
-        translatedSegments.push({
-          start: s.start,
-          end: s.end,
-          text: persianText.translated,
-        });
-      } catch (err) {
-        translatedSegments.push({ start: s.start, end: s.end, text: s.text });
-      }
-    }
-
-    res.json({
+    // پاسخ فوری به کاربر با Job ID (کد 202: Accepted)
+    res.status(202).json({
       success: true,
-      captions: translatedSegments,
-      usage: {
-        used: usage.used,
-        limit: DAILY_LIMIT_SECONDS,
-        remaining: usage.remaining,
-      },
+      jobId: jobId,
+      message: "Processing accepted. Use /status/:jobId to check progress.",
     });
   } catch (err) {
-    console.error("❌ /preload failed:", err);
-    const today = new Date().toISOString().split("T")[0];
-    const used = req.body?.userId
-      ? await getUserUsage(req.body.userId, today)
-      : 0;
+    console.error("❌ /start-job failed:", err);
     res.status(500).json({
       success: false,
-      error: err.message,
-      usage: { used, limit: DAILY_LIMIT_SECONDS },
+      error: "Internal server error during job creation.",
     });
-  } finally {
-    // 🧹 حذف فایل صوتی موقت
-    if (audioPath && fs.existsSync(audioPath)) {
-      try {
-        fs.unlinkSync(audioPath);
-        console.log("🧹 Temporary audio file deleted:", audioPath);
-      } catch (delErr) {
-        console.warn("⚠️ Could not delete temp audio file:", delErr.message);
-      }
-    }
   }
 });
 
 /**
- * 🔄 ذخیره کوکی‌های یوتیوب
+ * 🔍 مسیر پیگیری وضعیت کار
+ */
+app.get("/status/:jobId", async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = await getJobStatus(jobId);
+
+    if (!job) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Job ID not found." });
+    }
+
+    const response = {
+      success: true,
+      jobId: jobId,
+      status: job.status,
+      videoUrl: job.video_url,
+      createdAt: job.created_at,
+      finishedAt: job.finished_at,
+      captions: null,
+      error: job.error_message || null,
+    };
+
+    if (job.status === "COMPLETED" && job.captions_json) {
+      response.captions = JSON.parse(job.captions_json);
+    }
+
+    res.json(response);
+  } catch (err) {
+    console.error("❌ /status failed:", err);
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Internal server error during status check.",
+      });
+  }
+});
+
+/**
+ * 🔄 ذخیره کوکی‌های یوتیوب (بدون تغییر)
  */
 app.post("/upload-cookies", (req, res) => {
   try {
@@ -137,11 +151,11 @@ app.post("/upload-cookies", (req, res) => {
 });
 
 /**
- * 🩺 تست سلامت سرور
+ * 🩺 تست سلامت سرور (بدون تغییر)
  */
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
-const PORT = 3000;
+const PORT = 7860; // پورت استاندارد Hugging Face
 app.listen(PORT, () =>
-  console.log(`🚀 Server running at http://localhost:${PORT}/preload`)
+  console.log(`🚀 Server running at http://localhost:${PORT}/start-job`)
 );
