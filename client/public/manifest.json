@@ -13,7 +13,7 @@
   ],
   "host_permissions": [
     "*://www.youtube.com/*",
-    "http://localhost:3000/*"
+    "http://localhost:3001/*"
   ],
   "background": {
     "service_worker": "background/index.js",

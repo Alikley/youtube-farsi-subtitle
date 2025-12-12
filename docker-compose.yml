@@ -1,0 +1,36 @@
+services:
+  navak-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: navak-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - HTTP_PROXY=http://host.docker.internal:7890
+      - HTTPS_PROXY=http://host.docker.internal:7890
+    env_file:
+      - ./.env
+    depends_on:
+      - whisper
+
+  frontend:
+    build: ./client
+    container_name: navak-frontend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./client:/app
+    env_file:
+      - ./.env
+
+  whisper:
+    build:
+      context: ./whisper.cpp
+      dockerfile: Dockerfile
+    container_name: whisper
+    restart: always
+    ports:
+      - "9000:9000"
+  

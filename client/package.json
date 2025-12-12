@@ -32,8 +32,6 @@
     "react-dom": "^19.2.0",
     "react-scripts": "5.0.1",
     "sass": "^1.93.2",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
     "tailwindcss": "^4.1.16",
     "typescript": "^4.9.5",
     "wav": "^1.0.2",

@@ -1,17 +1,19 @@
 // server/database.js
-import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DB_DIR = path.join(__dirname, "data");
 const DB_PATH = path.join(DB_DIR, "app.db");
-const SQLITE_PATH = path.join(__dirname, "./app/sqlite3.exe");
 
 if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+
+let db;
 
 export async function runSQLite(query) {
   return new Promise((resolve, reject) => {
@@ -37,12 +39,14 @@ export async function runSQLite(query) {
 
 // 🧱 ایجاد جدول‌ها
 export async function initDatabase() {
-  if (!fs.existsSync(DB_PATH)) {
-    console.log("📦 Creating new SQLite database...");
-  }
+  db = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database,
+  });
 
-  // جدول دانلودها
-  await runSQLite(`
+  console.log("📦 Initializing database:", DB_PATH);
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS downloads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       video_url TEXT,
@@ -51,8 +55,7 @@ export async function initDatabase() {
     );
   `);
 
-  // جدول استفاده روزانه کاربران
-  await runSQLite(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS user_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
@@ -67,25 +70,26 @@ export async function initDatabase() {
 
 // 🕒 گرفتن مصرف روزانه کاربر
 export async function getUserUsage(userId, day) {
-  const query = `SELECT seconds_used FROM user_usage WHERE user_id='${userId}' AND day='${day}'`;
-  const result = await runSQLite(query);
-  return result ? parseInt(result.split("|")[0]) || 0 : 0;
+  if (!db) await initDatabase();
+  const row = await db.get(
+    "SELECT seconds_used FROM user_usage WHERE user_id = ? AND day = ?",
+    [userId, day]
+  );
+  return row ? row.seconds_used : 0;
 }
 
 // ➕ افزودن مصرف روزانه
 export async function addUserUsage(userId, day, seconds) {
+  if (!db) await initDatabase();
   const current = await getUserUsage(userId, day);
   const total = current + seconds;
 
-  const insert = `
-    INSERT OR REPLACE INTO user_usage (id, user_id, day, seconds_used)
-    VALUES (
-      (SELECT id FROM user_usage WHERE user_id='${userId}' AND day='${day}'),
-      '${userId}',
-      '${day}',
-      ${total}
-    );
-  `;
-  await runSQLite(insert);
+  await db.run(
+    `INSERT INTO user_usage (user_id, day, seconds_used)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id, day) DO UPDATE SET seconds_used = excluded.seconds_used;`,
+    [userId, day, total]
+  );
+
   return total;
 }
