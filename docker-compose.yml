@@ -1,36 +1,18 @@
+version: '3.8'
+
 services:
   navak-backend:
     build:
-      context: ./server
+      context: . 
       dockerfile: Dockerfile
-    container_name: navak-backend
+    container_name: navak-backend-single
     restart: always
     ports:
-      - "3000:3000"
-    environment:
-      - HTTP_PROXY=http://host.docker.internal:7890
-      - HTTPS_PROXY=http://host.docker.internal:7890
+      - "3000:3000" 
     env_file:
       - ./.env
-    depends_on:
-      - whisper
-
-  frontend:
-    build: ./client
-    container_name: navak-frontend
-    ports:
-      - "3001:3001"
     volumes:
-      - ./client:/app
-    env_file:
-      - ./.env
+      - ./server/data:/app/server/data
+      - ./downloads:/app/downloads 
 
-  whisper:
-    build:
-      context: ./whisper.cpp
-      dockerfile: Dockerfile
-    container_name: whisper
-    restart: always
-    ports:
-      - "9000:9000"
-  
+
